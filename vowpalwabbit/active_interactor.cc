@@ -6,6 +6,7 @@ license as described in the file LICENSE.
 #include <iostream>
 #include <string>
 #include <cstring>
+#include <cerrno>
 #include <cstdlib>
 #ifdef _WIN32
 #include <WinSock2.h>
@@ -18,12 +19,6 @@ license as described in the file LICENSE.
 #include <netdb.h>
 #endif
 
-using std::cin;
-using std::endl;
-using std::cout;
-using std::cerr;
-using std::string;
-
 using namespace std;
 
 int open_socket(const char* host, unsigned short port)
@@ -31,15 +26,15 @@ int open_socket(const char* host, unsigned short port)
   hostent* he;
   he = gethostbyname(host);
 
-  if (he == NULL)
+  if (he == nullptr)
     {
-      cerr << "can't resolve hostname: " << host << endl;
+      cerr << "gethostbyname(" << host << "): " << strerror(errno) << endl;
       throw exception();
     }
   int sd = socket(PF_INET, SOCK_STREAM, 0);
   if (sd == -1)
     {
-      cerr << "can't get socket " << endl;
+      cerr << "socket: " << strerror(errno) << endl;
       throw exception();
     }
   sockaddr_in far_end;
@@ -49,7 +44,7 @@ int open_socket(const char* host, unsigned short port)
   memset(&far_end.sin_zero, '\0',8);
   if (connect(sd,(sockaddr*)&far_end, sizeof(far_end)) == -1)
     {
-      cerr << "can't connect to: " << host << ':' << port << endl;
+      cerr << "connect(" << host << ':' << port << "): " << strerror(errno) << endl;
       throw exception();
     }
   return sd;
@@ -116,7 +111,7 @@ int main(int argc, char* argv[]){
         ttag=strsep(&toks," ");
         tag=ttag?string(ttag):string("'empty");
         itok=strsep(&toks,"\n");
-        if(itok==NULL || itok[0]=='\0'){
+        if(itok==nullptr || itok[0]=='\0'){
             continue;
         }
 

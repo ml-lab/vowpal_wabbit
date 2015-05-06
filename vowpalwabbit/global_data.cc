@@ -5,14 +5,13 @@ license as described in the file LICENSE.
  */
 #include <stdio.h>
 #include <float.h>
+#include <errno.h>
 #include <iostream>
 #include <sstream>
 #include <math.h>
 #include <assert.h>
 
 #include "global_data.h"
-#include "simple_label.h"
-#include "parser.h"
 #include "gd.h"
 
 using namespace std;
@@ -40,8 +39,7 @@ size_t really_read(int sock, void* in, size_t count)
       else
 	if (r < 0)
 	  {
-	    cerr << "argh! bad read! on message from " << sock << endl;
-	    perror(NULL);
+	    cerr << "read(" << sock << "," << count << "-" << done << "): " << strerror(errno) << endl;
 	    throw exception();
 	  }
 	else
@@ -71,8 +69,7 @@ void send_prediction(int sock, global_prediction p)
 #endif
 	  < (int)sizeof(p))
     {
-      cerr << "argh! bad global write! " << sock << endl;
-      perror(NULL);
+      cerr << "send_prediction write(" << sock << "): " << strerror(errno) << endl;
       throw exception();
     }
 }
@@ -109,7 +106,7 @@ void print_result(int f, float res, float weight, v_array<char> tag)
       ssize_t t = io_buf::write_file_or_socket(f, ss.str().c_str(), (unsigned int)len);
       if (t != len)
         {
-          cerr << "write error" << endl;
+          cerr << "write error: " << strerror(errno) << endl;
         }
     }
 }
@@ -127,30 +124,7 @@ void print_raw_text(int f, string s, v_array<char> tag)
   ssize_t t = io_buf::write_file_or_socket(f, ss.str().c_str(), (unsigned int)len);
   if (t != len)
     {
-      cerr << "write error" << endl;
-    }
-}
-
-void active_print_result(int f, float res, float weight, v_array<char> tag)
-{
-  if (f >= 0)
-    {
-      std::stringstream ss;
-      char temp[30];
-      sprintf(temp, "%f", res);
-      ss << temp;
-      if(!print_tag(ss, tag))
-          ss << ' ';
-      if(weight >= 0)
-	{
-	  sprintf(temp, " %f", weight);
-          ss << temp;
-	}
-      ss << '\n';
-      ssize_t len = ss.str().size();
-      ssize_t t = io_buf::write_file_or_socket(f, ss.str().c_str(), (unsigned int)len);
-      if (t != len)
-	cerr << "write error" << endl;
+      cerr << "write error: " << strerror(errno) << endl;
     }
 }
 
@@ -171,7 +145,7 @@ void print_lda_result(vw& all, int f, float* res, float weight, v_array<char> ta
       ssize_t t = io_buf::write_file_or_socket(f, ss.str().c_str(), (unsigned int)len);
 
       if (t != len)
-	cerr << "write error" << endl;
+        cerr << "write error: " << strerror(errno) << endl;
     }
 }
 
@@ -214,12 +188,87 @@ void compile_gram(vector<string> grams, uint32_t* dest, char* descriptor, bool q
     }
 }
 
+void compile_limits(vector<string> limits, uint32_t* dest, bool quiet)
+{
+  for (size_t i = 0; i < limits.size(); i++)
+    {
+      string limit = limits[i];
+      if ( isdigit(limit[0]) )
+	{
+	  int n = atoi(limit.c_str());
+	  if (!quiet)
+	    cerr << "limiting to " << n << "features for each namespace." << endl;
+	  for (size_t j = 0; j < 256; j++)
+	    dest[j] = n;
+	}
+      else if ( limit.size() == 1)
+	cout << "You must specify the namespace index before the n" << endl;
+      else {
+	int n = atoi(limit.c_str()+1);
+	dest[(uint32_t)limit[0]] = n;
+	if (!quiet)
+	  cerr << "limiting to " << n << " for namespaces " << limit[0] << endl;
+      }
+    }
+}
+
+void add_options(vw& all, po::options_description& opts)
+{
+  all.opts.add(opts);
+  po::variables_map new_vm;
+  //parse local opts once for notifications.
+  po::parsed_options parsed = po::command_line_parser(all.args).
+    style(po::command_line_style::default_style ^ po::command_line_style::allow_guessing).
+    options(opts).allow_unregistered().run();
+  po::store(parsed, new_vm);
+  po::notify(new_vm); 
+
+  for (po::variables_map::iterator it=new_vm.begin(); it!=new_vm.end(); ++it)
+    all.vm.insert(*it);
+}
+
+void add_options(vw& all)
+{
+  add_options(all, *all.new_opts);
+  delete all.new_opts;
+}
+
+bool no_new_options(vw& all)
+{
+  //parse local opts once for notifications.
+  po::parsed_options parsed = po::command_line_parser(all.args).
+    style(po::command_line_style::default_style ^ po::command_line_style::allow_guessing).
+    options(*all.new_opts).allow_unregistered().run();
+  po::variables_map new_vm;
+  po::store(parsed, new_vm);
+  all.opts.add(*all.new_opts);
+  delete all.new_opts;
+  for (po::variables_map::iterator it=new_vm.begin(); it!=new_vm.end(); ++it)
+    all.vm.insert(*it);
+  
+  if (new_vm.size() == 0) // required are missing;
+    return true;
+  else
+    return false;
+}
+
+bool missing_option(vw& all, bool keep, const char* name, const char* description)
+{
+  new_options(all)(name,description);
+  if (no_new_options(all))
+    return true;
+  if (keep)
+    *all.file_options << " --" << name;
+  return false;
+}
+
 vw::vw()
 {
-  sd = (shared_data *) calloc(1, sizeof(shared_data));
+  sd = &calloc_or_die<shared_data>();
   sd->dump_interval = 1.;   // next update progress dump
   sd->contraction = 1.;
   sd->max_label = 1.;
+  sd->min_label = 0.;
 
   p = new_parser();
   p->emptylines_separate_examples = false;
@@ -227,32 +276,32 @@ vw::vw()
 
   reg_mode = 0;
   current_pass = 0;
+  reduction_stack=v_init<LEARNER::base_learner* (*)(vw&)>();
+
+  data_filename = "";
+
+  file_options = new std::stringstream;
 
   bfgs = false;
   hessian_on = false;
-  reg.stride = 1;
+  active = false;
+  reg.stride_shift = 0;
   num_bits = 18;
   default_bits = true;
   daemon = false;
   num_children = 10;
-  lda_alpha = 0.1f;
-  lda_rho = 0.1f;
-  lda_D = 10000.;
-  lda_epsilon = 0.001f;
-  minibatch = 1;
   span_server = "";
-  m = 15;
   save_resume = false;
+
+  random_positive_weights = false;
 
   set_minmax = set_mm;
 
   power_t = 0.5;
   eta = 0.5; //default learning rate for normalized adaptive updates, this is switched to 10 by default for the other updates (see parse_args.cc)
   numpasses = 1;
-  rel_threshold = 0.001f;
-  rank = 0;
 
-  final_prediction_sink.begin = final_prediction_sink.end=final_prediction_sink.end_array = NULL;
+  final_prediction_sink.begin = final_prediction_sink.end=final_prediction_sink.end_array = nullptr;
   raw_prediction = -1;
   print = print_result;
   print_text = print_raw_text;
@@ -262,15 +311,13 @@ vw::vw()
   per_feature_regularizer_output = "";
   per_feature_regularizer_text = "";
 
-  options_from_file = "";
-
   #ifdef _WIN32
   stdout_fileno = _fileno(stdout);
   #else
   stdout_fileno = fileno(stdout);
   #endif
 
-  searn = false;
+  searchstr = nullptr;
 
   nonormalize = false;
   l1_lambda = 0.0;
@@ -288,6 +335,7 @@ vw::vw()
     {
       ngram[i] = 0;
       skips[i] = 0;
+      limit[i] = INT_MAX;
       affix_features[i] = 0;
       spelling_features[i] = 0;
     }
@@ -297,16 +345,11 @@ vw::vw()
   normalized_updates = true;
   invariant_updates = true;
 
-  normalized_sum_norm_x = 0.;
   normalized_idx = 2;
-  feature_mask_idx = 3;//by default use the 4th position as mask
 
   add_constant = true;
   audit = false;
-  active = false;
-  active_simulation = false;
-  active_c0 = 8.;
-  reg.weight_vector = NULL;
+  reg.weight_vector = nullptr;
   pass_length = (size_t)-1;
   passes_complete = 0;
 

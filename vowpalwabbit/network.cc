@@ -18,7 +18,6 @@ license as described in the file LICENSE.
 #include <netdb.h>
 #include <strings.h>
 #endif
-#include <stdlib.h>
 #include <string.h>
 
 #include <string>
@@ -35,7 +34,7 @@ int open_socket(const char* host)
 #endif
   short unsigned int port = 26542;
   hostent* he;
-  if (colon != NULL)
+  if (colon != nullptr)
     {
       port = atoi(colon+1);
       string hostname(host,colon-host);
@@ -44,15 +43,15 @@ int open_socket(const char* host)
   else
     he = gethostbyname(host);
 
-  if (he == NULL)
+  if (he == nullptr)
     {
-      cerr << "can't resolve hostname: " << host << endl;
+      cerr << "gethostbyname(" << host << "): " << strerror(errno) << endl;
       throw exception();
     }
   int sd = (int)socket(PF_INET, SOCK_STREAM, 0);
   if (sd == -1)
     {
-      cerr << "can't get socket " << endl;
+      cerr << "socket: " << strerror(errno) << endl;
       throw exception();
     }
   sockaddr_in far_end;
@@ -62,12 +61,7 @@ int open_socket(const char* host)
   memset(&far_end.sin_zero, '\0',8);
   if (connect(sd,(sockaddr*)&far_end, sizeof(far_end)) == -1)
     {
-#ifdef _WIN32
-      int err_code = WSAGetLastError();
-      cerr << "can't connect to: " << host << ":" << port << ". Windows Sockets error code " << err_code << endl;
-#else
-      cerr << "can't connect to: " << host << ':' << port << endl;
-#endif
+      cerr << "connect(" << host << ':' << port << "): " << strerror(errno) << endl;
       throw exception();
     }
   char id = '\0';

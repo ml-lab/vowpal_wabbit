@@ -7,8 +7,6 @@ license as described in the file LICENSE.
 #include "unique_sort.h"
 #include "global_data.h"
 
-using namespace std;
-
 const size_t neg_1 = 1;
 const size_t general = 2;
 
@@ -40,9 +38,7 @@ size_t read_cached_tag(io_buf& cache, example* ae)
   return tag_size+sizeof(tag_size);
 }
 
-struct one_float {
-  float f;
-}
+struct one_float { float f; }
 #ifndef _WIN32
 __attribute__((packed))
 #endif
@@ -55,7 +51,7 @@ int read_cached_features(void* in, example* ec)
   ae->sorted = all->p->sorted_cache;
   io_buf* input = all->p->input;
 
-  size_t total = all->p->lp.read_cached_label(all->sd, ae->ld, *input);
+  size_t total = all->p->lp.read_cached_label(all->sd, &ae->l, *input);
   if (total == 0)
     return 0;
   if (read_cached_tag(*input,ae) == 0)
@@ -152,9 +148,9 @@ void output_features(io_buf& cache, unsigned char index, feature* begin, feature
   size_t storage = (end-begin) * int_size;
   for (feature* i = begin; i != end; i++)
     if (i->x != 1. && i->x != -1.)
-      storage+=sizeof(float);
+      storage += sizeof(float);
   buf_write(cache, c, sizeof(index) + storage + sizeof(size_t));
-  *(unsigned char*)c = index;
+  *reinterpret_cast<unsigned char*>(c) = index;
   c += sizeof(index);
 
   char *storage_size_loc = c;
@@ -174,8 +170,8 @@ void output_features(io_buf& cache, unsigned char index, feature* begin, feature
 	c = run_len_encode(c, diff | neg_1);
       else {
 	c = run_len_encode(c, diff | general);
-	*(float *)c = i->x;
-	c += sizeof(float);
+	memcpy(c, &i->x, sizeof(i->x));
+	c += sizeof(i->x);
       }
     }
   cache.set(c);

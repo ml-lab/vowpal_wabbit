@@ -1,10 +1,16 @@
 #include <memory>
+
+#ifdef WIN32
+#define USE_CODECVT
 #include <codecvt>
+#endif
+
 #include <locale>
 #include <string>
 
 #include "vwdll.h"
 #include "parser.h"
+#include "simple_label.h"
 #include "parse_args.h"
 #include "vw.h"
 
@@ -21,15 +27,16 @@
  
 extern "C"
 {
-
+#ifdef USE_CODECVT
 	VW_DLL_MEMBER VW_HANDLE VW_CALLING_CONV VW_Initialize(const char16_t * pstrArgs)
 	{
 		std::wstring_convert<std::codecvt_utf8<char16_t>, char16_t> convert;
 		std::string sa(convert.to_bytes(pstrArgs));
 		return VW_InitializeA(sa.c_str());
 	}
+#endif
 
-	
+
 	VW_DLL_MEMBER VW_HANDLE VW_CALLING_CONV VW_InitializeA(const char * pstrArgs)
 	{
 		string s(pstrArgs);
@@ -37,7 +44,7 @@ extern "C"
 		return static_cast<VW_HANDLE>(all);
 	}
 	
-	VW_DLL_MEMBER void      VW_CALLING_CONV VW_Finish(VW_HANDLE handle)
+	VW_DLL_MEMBER void      VW_CALLING_CONV VW_Finish_Passes(VW_HANDLE handle)
 	{
 		vw * pointer = static_cast<vw*>(handle);
 		if (pointer->numpasses > 1)
@@ -45,12 +52,15 @@ extern "C"
 			adjust_used_index(*pointer);
 			pointer->do_reset_source = true;
 			VW::start_parser(*pointer,false);
-			pointer->l->driver(pointer);
+			LEARNER::generic_driver(*pointer);
 			VW::end_parser(*pointer); 
 			}
-		else
-			release_parser_datastructures(*pointer);
+	}
 
+	VW_DLL_MEMBER void      VW_CALLING_CONV VW_Finish(VW_HANDLE handle)
+	{
+		vw * pointer = static_cast<vw*>(handle);
+		release_parser_datastructures(*pointer);
 		VW::finish(*pointer);
 	}
 
@@ -73,14 +83,14 @@ extern "C"
 		VW::primitive_feature_space * f = reinterpret_cast<VW::primitive_feature_space*>( features );
 		VW::releaseFeatureSpace(f, len);
 	}
-	
+#ifdef USE_CODECVT
 	VW_DLL_MEMBER VW_EXAMPLE VW_CALLING_CONV VW_ReadExample(VW_HANDLE handle, const char16_t * line)
 	{
 		std::wstring_convert<std::codecvt_utf8<char16_t>, char16_t> convert;
 		std::string sa(convert.to_bytes(line));
 		return VW_ReadExampleA(handle, sa.c_str());
 	}
-	
+#endif
 	VW_DLL_MEMBER VW_EXAMPLE VW_CALLING_CONV VW_ReadExampleA(VW_HANDLE handle, const char * line)
 	{
 		vw * pointer = static_cast<vw*>(handle);
@@ -107,26 +117,74 @@ extern "C"
 		return static_cast<VW_EXAMPLE>(VW::get_example(parser_pointer));
 	}
 
-	VW_DLL_MEMBER VW_LABEL VW_CALLING_CONV VW_GetLabel(VW_HANDLE handle, VW_EXAMPLE e)
+	VW_DLL_MEMBER float VW_CALLING_CONV VW_GetLabel(VW_EXAMPLE e)
 	{
-		vw * pointer = static_cast<vw*>(handle);
-		label_data* ld = VW::get_label(static_cast<example*>(e));
-		return static_cast<VW_LABEL>(ld);
+		return VW::get_label(static_cast<example*>(e));
 	}
 
+	VW_DLL_MEMBER float VW_CALLING_CONV VW_GetTopicPrediction(VW_EXAMPLE e, size_t i)
+	{
+		return VW::get_topic_prediction(static_cast<example*>(e), i);
+	}
+
+	VW_DLL_MEMBER float VW_CALLING_CONV VW_GetImportance(VW_EXAMPLE e)
+	{
+		return VW::get_importance(static_cast<example*>(e));
+	}
+
+	VW_DLL_MEMBER float VW_CALLING_CONV VW_GetInitial(VW_EXAMPLE e)
+	{
+		return VW::get_initial(static_cast<example*>(e));
+	}
+
+	VW_DLL_MEMBER float VW_CALLING_CONV VW_GetPrediction(VW_EXAMPLE e)
+	{
+		return VW::get_prediction(static_cast<example*>(e));
+	}
+
+	VW_DLL_MEMBER float VW_CALLING_CONV VW_GetCostSensitivePrediction(VW_EXAMPLE e)
+	{
+		return VW::get_cost_sensitive_prediction(static_cast<example*>(e));
+	}
+
+	VW_DLL_MEMBER size_t VW_CALLING_CONV VW_GetTagLength(VW_EXAMPLE e)
+	{
+		return VW::get_tag_length(static_cast<example*>(e));
+	}
+
+	VW_DLL_MEMBER const char* VW_CALLING_CONV VW_GetTag(VW_EXAMPLE e)
+	{
+		return VW::get_tag(static_cast<example*>(e));
+	}
+
+	VW_DLL_MEMBER size_t VW_CALLING_CONV VW_GetFeatureNumber(VW_EXAMPLE e)
+	{
+		return VW::get_feature_number(static_cast<example*>(e));
+	}
+
+	VW_DLL_MEMBER VW_FEATURE VW_CALLING_CONV VW_GetFeatures(VW_HANDLE handle, VW_EXAMPLE e, size_t* plen)
+	{
+		vw* pointer = static_cast<vw*>(handle);
+		return VW::get_features(*pointer, static_cast<example*>(e), *plen);
+	}
+
+	VW_DLL_MEMBER void VW_CALLING_CONV VW_ReturnFeatures(VW_FEATURE f)
+	{
+		VW::return_features(static_cast<feature*>(f));
+	}
 	VW_DLL_MEMBER void VW_CALLING_CONV VW_FinishExample(VW_HANDLE handle, VW_EXAMPLE e)
 	{
 		vw * pointer = static_cast<vw*>(handle);
 		VW::finish_example(*pointer, static_cast<example*>(e));
 	}
-
+#ifdef USE_CODECVT
 	VW_DLL_MEMBER size_t VW_CALLING_CONV VW_HashSpace(VW_HANDLE handle, const char16_t * s)
 	{
 		std::wstring_convert<std::codecvt_utf8<char16_t>, char16_t> convert;
 		std::string sa(convert.to_bytes(s));
 		return VW_HashSpaceA(handle,sa.c_str());
 	}
-
+#endif
 	VW_DLL_MEMBER size_t VW_CALLING_CONV VW_HashSpaceA(VW_HANDLE handle, const char * s)
 	{
 		vw * pointer = static_cast<vw*>(handle);
@@ -134,14 +192,14 @@ extern "C"
 		return VW::hash_space(*pointer, str);
 	}
 
-
+#ifdef USE_CODECVT
 	VW_DLL_MEMBER size_t VW_CALLING_CONV VW_HashFeature(VW_HANDLE handle, const char16_t * s, unsigned long u)
 	{
 		std::wstring_convert<std::codecvt_utf8<char16_t>, char16_t> convert;
 		std::string sa(convert.to_bytes(s));
 		return VW_HashFeatureA(handle,sa.c_str(),u);
 	}
-
+#endif
 
 	VW_DLL_MEMBER size_t VW_CALLING_CONV VW_HashFeatureA(VW_HANDLE handle, const char * s, unsigned long u)
 	{
@@ -161,7 +219,17 @@ extern "C"
 		vw * pointer = static_cast<vw*>(handle);
 		example * ex = static_cast<example*>(e);
 		pointer->learn(ex);
-		return ex->final_prediction;
+		return VW::get_prediction(ex);
+	}
+
+	VW_DLL_MEMBER float VW_CALLING_CONV VW_Predict(VW_HANDLE handle, VW_EXAMPLE e) 
+	{
+		vw * pointer = static_cast<vw*>(handle);
+		example * ex = static_cast<example*>(e);
+		pointer->l->predict(*ex);
+		//BUG: The below method may return garbage as it assumes a certain structure for ex->ld
+		//which may not be the actual one used (e.g., for cost-sensitive multi-class learning)
+		return VW::get_prediction(ex);
 	}
 
 	VW_DLL_MEMBER float VW_CALLING_CONV VW_Get_Weight(VW_HANDLE handle, size_t index, size_t offset)
@@ -188,16 +256,16 @@ extern "C"
 		return VW::get_stride(*pointer);
 	}
 
-	VW_DLL_MEMBER VW_FLAT_EXAMPLE VW_CALLING_CONV VW_FlattenExample(VW_HANDLE handle, VW_EXAMPLE e)
+	VW_DLL_MEMBER void VW_CALLING_CONV VW_SaveModel(VW_HANDLE handle)
 	{
 		vw* pointer = static_cast<vw*>(handle);
-		example* ex = static_cast<example*>(e);
-		return static_cast<VW_FLAT_EXAMPLE>(VW::flatten_example(*pointer, ex));
-	}
 
-	VW_DLL_MEMBER void VW_CALLING_CONV VW_FreeFlattenExample(VW_FLAT_EXAMPLE fec)
-	{
-		VW::flat_example *p = reinterpret_cast<VW::flat_example*>(fec);
-		VW::free_flatten_example(p);
+		string name = pointer->final_regressor_name;
+		if (name.empty())
+		{
+			return;
+		}
+
+		return VW::save_predictor(*pointer, name);
 	}
 }

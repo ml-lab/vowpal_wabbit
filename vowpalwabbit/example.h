@@ -3,11 +3,14 @@ Copyright (c) by respective owners including Yahoo!, Microsoft, and
 individual contributors. All rights reserved.  Released under a BSD
 license as described in the file LICENSE.
  */
-#ifndef EX_H
-#define EX_H
-
+#pragma once
 #include <stdint.h>
 #include "v_array.h"
+#include "simple_label.h"
+#include "multiclass.h"
+#include "multilabel.h"
+#include "cost_sensitive.h"
+#include "cb.h"
 
 const size_t wap_ldf_namespace  = 126;
 const size_t history_namespace  = 127;
@@ -17,6 +20,8 @@ const size_t autolink_namespace  = 130;
 const size_t neighbor_namespace  = 131;   // this is \x83 -- to do quadratic, say "-q a`printf "\x83"` on the command line
 const size_t affix_namespace     = 132;   // this is \x84
 const size_t spelling_namespace  = 133;   // this is \x85
+const size_t conditioning_namespace = 134;
+const size_t dictionary_namespace  = 135;
 
 struct feature {
   float x;
@@ -32,29 +37,40 @@ struct audit_data {
   bool alloced;
 };
 
-typedef float simple_prediction;
+typedef union {
+  label_data simple;
+  MULTICLASS::label_t multi;
+  COST_SENSITIVE::label cs;
+  CB::label cb;
+  CB_EVAL::label cb_eval;
+  MULTILABEL::labels multilabels;
+} polylabel;
+
+typedef union {
+  float scalar;
+  uint32_t multiclass;
+  MULTILABEL::labels multilabels;
+} polyprediction;
 
 struct example // core example datatype.
-{
-  void* ld;
-  simple_prediction final_prediction;
+{//output prediction
+  polyprediction pred;
 
+  // input fields
+  polylabel l;
   v_array<char> tag;//An identifier for the example.
   size_t example_counter;
-
   v_array<unsigned char> indices;
   v_array<feature> atomics[256]; // raw parsed data
   uint32_t ft_offset;
   
-  v_array<audit_data> audit_features[256];
-  
+  //helpers
+  v_array<audit_data> audit_features[256];  
   size_t num_features;//precomputed, cause it's fast&easy.
   float partial_prediction;//shared data for prediction.
+  float updated_prediction;//estimated post-update prediction.
   v_array<float> topic_predictions;
   float loss;
-  float eta_round;
-  float eta_global;
-  float global_weight;
   float example_t;//sum of importance weights so far.
   float sum_feat_sq[256];//helper for total_sum_feat_sq.
   float total_sum_feat_sq;//precomputed, cause it's kind of fast & easy.
@@ -68,29 +84,29 @@ struct example // core example datatype.
 
  struct vw;  
  
-namespace VW {
 struct flat_example 
 {
-	void* ld;  
-	simple_prediction final_prediction;  
+  polylabel l;
 
-	size_t tag_len;
-	char* tag;//An identifier for the example.  
-
-	size_t example_counter;  
-	uint32_t ft_offset;  
-	float global_weight;
-
-	size_t num_features;//precomputed, cause it's fast&easy.  
-	size_t feature_map_len;
-	feature* feature_map; //map to store sparse feature vectors  
+  size_t tag_len;
+  char* tag;//An identifier for the example.  
+  
+  size_t example_counter;  
+  uint32_t ft_offset;  
+  float global_weight;
+  
+  size_t num_features;//precomputed, cause it's fast&easy.  
+  float total_sum_feat_sq;//precomputed, cause it's kind of fast & easy.
+  size_t feature_map_len;
+  feature* feature_map; //map to store sparse feature vectors  
 };
+
 flat_example* flatten_example(vw& all, example *ec);
+flat_example* flatten_sort_example(vw& all, example *ec);
 void free_flatten_example(flat_example* fec);
-}
 
 example *alloc_examples(size_t,size_t);
-void dealloc_example(void(*delete_label)(void*), example&);
+void dealloc_example(void(*delete_label)(void*), example&ec, void(*delete_prediction)(void*) = nullptr);
 
 inline int example_is_newline(example& ec)
 {
@@ -99,5 +115,3 @@ inline int example_is_newline(example& ec)
           ((ec.indices.size() == 1) &&
            (ec.indices.last() == constant_namespace)));
 }
-
-#endif

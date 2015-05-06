@@ -211,14 +211,14 @@ int main(int argc, char *argv[])
 
                                 const string str(estr);
 
-                                if(pr_queue.size() < topk)
+                                if(pr_queue.size() < (size_t)topk)
                                 {        
-                                        pr_queue.push(make_pair(ex->final_prediction, str));
+				  pr_queue.push(make_pair(ex->pred.scalar, str));
                                 }
-                                else if(pr_queue.top().first < ex->final_prediction)
+                                else if(pr_queue.top().first < ex->pred.scalar)
                                 {
                                         pr_queue.pop();
-                                        pr_queue.push(make_pair(ex->final_prediction, str));
+                                        pr_queue.push(make_pair(ex->pred.scalar, str));
                                 }
 
                                 VW::finish_example(*model, ex);
